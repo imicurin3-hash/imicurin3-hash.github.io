@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VLESS Log Checker — Уникальность по IP:Port / Domain:Port</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-hover: #1c2333;
+            --border: #30363d;
+            --border-active: #58a6ff;
+            --text: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent: #58a6ff;
+            --accent-glow: rgba(88, 166, 255, 0.25);
+            --success: #3fb950;
+            --success-bg: rgba(63, 185, 80, 0.12);
+            --warning: #d2991d;
+            --warning-bg: rgba(210, 153, 29, 0.12);
+            --danger: #f85149;
+            --danger-bg: rgba(248, 81, 73, 0.12);
+            --radius: 14px;
+            --radius-sm: 10px;
+            --transition: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+            --font: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+            --mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            background-image:
+                radial-gradient(ellipse at 20% 0%, rgba(88, 166, 255, 0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.05) 0%, transparent 60%),
+                radial-gradient(ellipse at 50% 50%, rgba(63, 185, 80, 0.03) 0%, transparent 70%);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 720px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            animation: fadeInUp 0.5s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse-border {
+            0%,
+            100% {
+                border-color: var(--border-active);
+                box-shadow: 0 0 0 0 var(--accent-glow);
+            }
+            50% {
+                border-color: var(--accent);
+                box-shadow: 0 0 0 10px transparent;
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes countUp {
+            from {
+                opacity: 0;
+                transform: scale(0.7);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .header .icon-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .header .logo-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #58a6ff 0%, #8b5cf6 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 4px 20px rgba(88, 166, 255, 0.3);
+        }
+        .header h1 {
+            font-size: 1.55rem;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            color: #fff;
+        }
+        .header .subtitle {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            letter-spacing: 0.1px;
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            position: relative;
+            border: 2.5px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 50px 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            background: var(--surface);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            overflow: hidden;
+        }
+        .drop-zone::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: var(--radius);
+            opacity: 0;
+            transition: opacity var(--transition);
+            background: radial-gradient(circle at center, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .drop-zone:hover {
+            border-color: #5a7a9f;
+            background: var(--surface-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        }
+        .drop-zone:hover::before {
+            opacity: 0.5;
+        }
+        .drop-zone.drag-over {
+            border-color: var(--accent) !important;
+            border-style: solid !important;
+            background: var(--surface-hover) !important;
+            animation: pulse-border 1.6s ease-in-out infinite;
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(88, 166, 255, 0.2);
+        }
+        .drop-zone.drag-over::before {
+            opacity: 1;
+        }
+        .drop-zone.processed {
+            border-color: var(--success);
+            border-style: solid;
+            background: var(--success-bg);
+            pointer-events: auto;
+            animation: none;
+        }
+        .drop-zone .drop-icon {
+            font-size: 48px;
+            position: relative;
+            z-index: 1;
+            transition: transform var(--transition);
+            line-height: 1;
+        }
+        .drop-zone.drag-over .drop-icon {
+            transform: scale(1.15);
+        }
+        .drop-zone .drop-text {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: #c9d1d9;
+            position: relative;
+            z-index: 1;
+            letter-spacing: -0.2px;
+        }
+        .drop-zone .drop-hint {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            position: relative;
+            z-index: 1;
+        }
+        .drop-zone input[type="file"] {
+            display: none;
+        }
+        .drop-zone .file-name {
+            font-size: 0.85rem;
+            color: var(--accent);
+            font-weight: 500;
+            position: relative;
+            z-index: 1;
+            background: rgba(88, 166, 255, 0.1);
+            padding: 5px 14px;
+            border-radius: 20px;
+            display: none;
+            letter-spacing: 0.2px;
+        }
+        .drop-zone .file-name.visible {
+            display: inline-block;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        /* Status */
+        .status-bar {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border-radius: var(--radius-sm);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            animation: fadeIn 0.3s ease-out;
+        }
+        .status-bar.visible {
+            display: flex;
+        }
+        .status-bar .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2.5px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .status-bar.done {
+            border-color: var(--success);
+            background: var(--success-bg);
+            color: var(--success);
+        }
+        .status-bar.done .spinner {
+            display: none;
+        }
+        .status-bar.error {
+            border-color: var(--danger);
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+        .status-bar.error .spinner {
+            display: none;
+        }
+
+        /* Results */
+        .results {
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            animation: fadeIn 0.4s ease-out;
+        }
+        .results.visible {
+            display: flex;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 18px 16px;
+            text-align: center;
+            transition: var(--transition);
+            animation: countUp 0.4s ease-out;
+        }
+        .stat-card:hover {
+            border-color: #5a7a9f;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        .stat-card .stat-number {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            line-height: 1;
+            margin-bottom: 4px;
+            font-family: var(--mono);
+        }
+        .stat-card.total .stat-number {
+            color: #e6edf3;
+        }
+        .stat-card.unique .stat-number {
+            color: var(--accent);
+        }
+        .stat-card.duplicates .stat-number {
+            color: var(--warning);
+        }
+        .stat-card .stat-label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+
+        /* Preview Table */
+        .preview-section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            animation: fadeIn 0.5s ease-out;
+        }
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface-hover);
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .preview-header h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #c9d1d9;
+            letter-spacing: -0.2px;
+            white-space: nowrap;
+        }
+        .preview-header .badge {
+            font-size: 0.7rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        .badge-info {
+            background: rgba(88, 166, 255, 0.15);
+            color: var(--accent);
+        }
+        .table-wrapper {
+            max-height: 320px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+        .table-wrapper::-webkit-scrollbar {
+            width: 5px;
+        }
+        .table-wrapper::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .table-wrapper::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+        .table-wrapper::-webkit-scrollbar-thumb:hover {
+            background: #5a7a9f;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+        table thead {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        table thead th {
+            background: var(--surface-hover);
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-muted);
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+        table tbody td {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(48, 54, 61, 0.6);
+            font-family: var(--mono);
+            font-size: 0.78rem;
+            color: #c9d1d9;
+            letter-spacing: -0.2px;
+            word-break: break-all;
+        }
+        table tbody tr {
+            transition: background var(--transition);
+        }
+        table tbody tr:hover {
+            background: rgba(88, 166, 255, 0.04);
+        }
+        table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .count-cell {
+            text-align: center;
+            font-weight: 700;
+            color: var(--warning) !important;
+            white-space: nowrap;
+        }
+        .count-cell.single {
+            color: var(--text-muted) !important;
+            font-weight: 400;
+        }
+        .no-data {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Buttons */
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            animation: fadeIn 0.5s ease-out;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 13px 24px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            letter-spacing: -0.2px;
+            transition: var(--transition);
+            text-decoration: none;
+            white-space: nowrap;
+            font-family: var(--font);
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #58a6ff 0%, #3b82f6 100%);
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(88, 166, 255, 0.3);
+            flex: 1;
+            min-width: 180px;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 28px rgba(88, 166, 255, 0.45);
+            background: linear-gradient(135deg, #6db5ff 0%, #4a90f0 100%);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(88, 166, 255, 0.3);
+        }
+        .btn-secondary {
+            background: var(--surface);
+            color: #c9d1d9;
+            border: 1.5px solid var(--border);
+            flex: 1;
+            min-width: 140px;
+        }
+        .btn-secondary:hover {
+            background: var(--surface-hover);
+            border-color: #5a7a9f;
+            transform: translateY(-1px);
+        }
+        .btn:disabled {
+            opacity: 0.4;
+            pointer-events: none;
+            cursor: not-allowed;
+        }
+        .btn .btn-icon {
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            letter-spacing: 0.2px;
+            padding-top: 4px;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .container {
+                gap: 16px;
+                max-width: 100%;
+            }
+            .drop-zone {
+                padding: 34px 18px;
+                gap: 10px;
+            }
+            .drop-zone .drop-icon {
+                font-size: 36px;
+            }
+            .drop-zone .drop-text {
+                font-size: 0.9rem;
+            }
+            .header h1 {
+                font-size: 1.25rem;
+            }
+            .stat-card .stat-number {
+                font-size: 1.6rem;
+            }
+            .stats-row {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+            }
+            .btn-row {
+                flex-direction: column;
+            }
+            .btn {
+                width: 100%;
+            }
+            table {
+                font-size: 0.7rem;
+            }
+            table thead th,
+            table tbody td {
+                padding: 8px 10px;
+            }
+            .preview-header {
+                padding: 10px 12px;
+            }
+            .preview-header h3 {
+                font-size: 0.8rem;
+            }
+        }
+        @media (max-width: 380px) {
+            .stats-row {
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 6px;
+            }
+            .stat-card {
+                padding: 12px 8px;
+            }
+            .stat-card .stat-number {
+                font-size: 1.3rem;
+            }
+            .stat-card .stat-label {
+                font-size: 0.65rem;
+            }
+            .drop-zone .drop-text {
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="icon-row">
+                <div class="logo-icon">🔍</div>
+            </div>
+            <h1>VLESS Log Checker</h1>
+            <p class="subtitle">Проверка уникальности записей по <strong>IP:Port</strong> и <strong>Domain:Port</strong></p>
+        </div>
+
+        <!-- Drop Zone -->
+        <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Загрузить файл с VLESS логами">
+            <span class="drop-icon">📂</span>
+            <span class="drop-text">Перетащите файл сюда</span>
+            <span class="drop-hint">или нажмите, чтобы выбрать файл (.txt, .log, .csv)</span>
+            <span class="file-name" id="fileName"></span>
+            <input type="file" id="fileInput" accept=".txt,.log,.csv,.json,text/plain" aria-hidden="true">
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <div class="spinner"></div>
+            <span id="statusText">Обработка файла...</span>
+        </div>
+
+        <!-- Results -->
+        <div class="results" id="results">
+            <!-- Stats -->
+            <div class="stats-row">
+                <div class="stat-card total">
+                    <div class="stat-number" id="statTotal">0</div>
+                    <div class="stat-label">Всего записей</div>
+                </div>
+                <div class="stat-card unique">
+                    <div class="stat-number" id="statUnique">0</div>
+                    <div class="stat-label">Уникальных</div>
+                </div>
+                <div class="stat-card duplicates">
+                    <div class="stat-number" id="statDuplicates">0</div>
+                    <div class="stat-label">Дубликатов</div>
+                </div>
+            </div>
+
+            <!-- Preview Table -->
+            <div class="preview-section" id="previewSection">
+                <div class="preview-header">
+                    <h3>📋 Найденные Host:Port</h3>
+                    <span class="badge badge-info" id="badgeCount">0 позиций</span>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Host:Port</th>
+                                <th style="text-align:center;width:70px;">Повторов</th>
+                                <th style="text-align:center;width:70px;">Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr>
+                                <td class="no-data" colspan="3">Нет данных для отображения</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="btn-row" id="btnRow">
+                <button class="btn btn-primary" id="btnDownload" disabled>
+                    <span class="btn-icon">⬇️</span> Скачать уникальные записи
+                </button>
+                <button class="btn btn-secondary" id="btnReset">
+                    <span class="btn-icon">🔄</span> Сбросить и загрузить новый файл
+                </button>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            Все операции выполняются локально в браузере · Данные не передаются на сервер
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // DOM elements
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            const fileNameEl = document.getElementById('fileName');
+            const statusBar = document.getElementById('statusBar');
+            const statusText = document.getElementById('statusText');
+            const results = document.getElementById('results');
+            const statTotal = document.getElementById('statTotal');
+            const statUnique = document.getElementById('statUnique');
+            const statDuplicates = document.getElementById('statDuplicates');
+            const tableBody = document.getElementById('tableBody');
+            const badgeCount = document.getElementById('badgeCount');
+            const btnDownload = document.getElementById('btnDownload');
+            const btnReset = document.getElementById('btnReset');
+            const previewSection = document.getElementById('previewSection');
+
+            // State
+            let originalFileName = '';
+            let uniqueVlessUrls = [];
+            let hostPortCounts = new Map(); // host:port -> count (before dedup)
+            let totalFound = 0;
+            let processedBlob = null;
+
+            /**
+             * Extract host:port from a VLESS URL
+             * Format: vless://uuid@host:port?params#name
+             * Returns normalized (lowercase) host:port string or null
+             */
+            function extractHostPort(vlessUrl) {
+                try {
+                    // Remove protocol prefix
+                    let afterProtocol = vlessUrl.replace(/^vless:\/\//i, '');
+
+                    // Find the @ separator
+                    const atIndex = afterProtocol.indexOf('@');
+                    if (atIndex === -1) return null;
+
+                    // Get everything after @
+                    let afterAt = afterProtocol.substring(atIndex + 1);
+
+                    // Find the end of host:port portion
+                    // It ends at the first occurrence of ?, #, /, or whitespace
+                    let endIndex = afterAt.length;
+                    const delimiters = ['?', '#', '/'];
+                    for (const delim of delimiters) {
+                        const idx = afterAt.indexOf(delim);
+                        if (idx !== -1 && idx < endIndex) {
+                            endIndex = idx;
+                        }
+                    }
+                    // Also check for whitespace
+                    const wsMatch = afterAt.match(/[\s]/);
+                    if (wsMatch && wsMatch.index < endIndex) {
+                        endIndex = wsMatch.index;
+                    }
+
+                    let hostPort = afterAt.substring(0, endIndex).trim();
+
+                    // Remove any trailing dots or invalid chars
+                    hostPort = hostPort.replace(/[.\s]+$/, '');
+
+                    if (!hostPort || hostPort.length < 3) return null;
+
+                    // Normalize: lowercase for domain case-insensitivity
+                    return hostPort.toLowerCase();
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            /**
+             * Find all VLESS URLs in text content
+             * Uses regex to match vless://uuid@host:port?params#name
+             */
+            function findAllVlessUrls(text) {
+                // Robust regex for VLESS URLs
+                // vless:// followed by UUID-like string @ host:port with optional ?query and #fragment
+                const vlessRegex = /vless:\/\/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}@[^\/\s?#]+(?:\?[^\s#]*)?(?:#[^\s]*)?/gi;
+
+                // Also try a broader pattern for non-standard UUIDs or formats
+                const broadRegex = /vless:\/\/[^\s@]+@[^\s?#]+(?:\?[^\s#]*)?(?:#[^\s]*)?/gi;
+
+                const matches = new Set();
+                const found1 = text.match(vlessRegex) || [];
+                const found2 = text.match(broadRegex) || [];
+
+                for (const m of found1) matches.add(m.trim());
+                for (const m of found2) matches.add(m.trim());
+
+                return Array.from(matches);
+            }
+
+            /**
+             * Process file content
+             */
+            function processContent(text, fileName) {
+                // Find all VLESS URLs
+                const allUrls = findAllVlessUrls(text);
+                totalFound = allUrls.length;
+
+                // Reset state
+                hostPortCounts = new Map();
+                const seenHostPorts = new Set();
+                uniqueVlessUrls = [];
+
+                // Process each URL
+                for (const url of allUrls) {
+                    const hostPort = extractHostPort(url);
+
+                    if (hostPort) {
+                        // Count occurrences (before dedup)
+                        hostPortCounts.set(hostPort, (hostPortCounts.get(hostPort) || 0) + 1);
+
+                        // Dedup: keep only first occurrence of each host:port
+                        if (!seenHostPorts.has(hostPort)) {
+                            seenHostPorts.add(hostPort);
+                            uniqueVlessUrls.push(url);
+                        }
+                    } else {
+                        // If we can't parse host:port, still include it as unique
+                        // (treat unparseable URLs as always unique)
+                        uniqueVlessUrls.push(url);
+                    }
+                }
+
+                // Create output blob
+                const outputContent = uniqueVlessUrls.join('\n') + (uniqueVlessUrls.length > 0 ? '\n' : '');
+                processedBlob = new Blob([outputContent], { type: 'text/plain;charset=utf-8' });
+
+                return {
+                    total: totalFound,
+                    unique: uniqueVlessUrls.length,
+                    duplicates: totalFound - uniqueVlessUrls.length,
+                    hostPortCounts: hostPortCounts,
+                };
+            }
+
+            /**
+             * Update UI with results
+             */
+            function updateUI(stats) {
+                // Stats
+                statTotal.textContent = stats.total;
+                statUnique.textContent = stats.unique;
+                statDuplicates.textContent = stats.duplicates;
+
+                // Animate stat cards
+                [statTotal, statUnique, statDuplicates].forEach(el => {
+                    el.style.animation = 'none';
+                    el.offsetHeight; // trigger reflow
+                    el.style.animation = 'countUp 0.4s ease-out';
+                });
+
+                // Badge
+                badgeCount.textContent = stats.hostPortCounts.size + ' позиций';
+
+                // Table
+                if (stats.hostPortCounts.size > 0) {
+                    const sortedEntries = Array.from(stats.hostPortCounts.entries())
+                        .sort((a, b) => b[1] - a[1]); // Sort by count descending
+
+                    tableBody.innerHTML = sortedEntries.map(([hostPort, count]) => {
+                        const isDuplicate = count > 1;
+                        const countClass = isDuplicate ? '' : 'single';
+                        const statusIcon = isDuplicate ?
+                            '<span style="color:#f85149;" title="Имеются дубликаты">⚠️</span>' :
+                            '<span style="color:#3fb950;" title="Уникальная запись">✅</span>';
+                        return `
+                                    <tr>
+                                        <td title="${escapeHtml(hostPort)}">${escapeHtml(hostPort)}</td>
+                                        <td class="count-cell ${countClass}">${count}</td>
+                                        <td style="text-align:center;">${statusIcon}</td>
+                                    </tr>
+                                `;
+                    }).join('');
+                } else if (stats.total === 0) {
+                    tableBody.innerHTML =
+                        '<tr><td class="no-data" colspan="3">VLESS записи не найдены в файле</td></tr>';
+                } else {
+                    tableBody.innerHTML =
+                        '<tr><td class="no-data" colspan="3">Не удалось извлечь Host:Port из записей</td></tr>';
+                }
+
+                // Show results
+                results.classList.add('visible');
+                previewSection.style.display = 'block';
+                btnDownload.disabled = (stats.unique === 0);
+                processedBlob = (stats.unique > 0) ? processedBlob : null;
+
+                // Update drop zone style
+                if (stats.total > 0) {
+                    dropZone.classList.add('processed');
+                } else {
+                    dropZone.classList.remove('processed');
+                }
+
+                // Update status bar
+                statusBar.classList.remove('error');
+                statusBar.classList.add('done');
+                if (stats.total === 0) {
+                    statusText.textContent = '⚠️ VLESS записи не найдены в файле. Проверьте содержимое.';
+                    statusBar.classList.add('error');
+                    statusBar.classList.remove('done');
+                } else if (stats.duplicates === 0) {
+                    statusText.textContent =
+                        `✅ Обработка завершена! Все ${stats.total} записей уникальны — дубликатов не найдено.`;
+                } else {
+                    statusText.textContent =
+                        `✅ Обработка завершена! Найдено ${stats.total} записей, ${stats.unique} уникальных, удалено ${stats.duplicates} дубликатов.`;
+                }
+
+                // Scroll to results
+                results.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            /**
+             * Escape HTML for safe rendering
+             */
+            function escapeHtml(str) {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            }
+
+            /**
+             * Handle file selection
+             */
+            function handleFile(file) {
+                if (!file) return;
+
+                // Reset UI
+                resetUI(true);
+
+                // Show file name
+                originalFileName = file.name;
+                fileNameEl.textContent = '📄 ' + file.name;
+                fileNameEl.classList.add('visible');
+
+                // Show status
+                statusBar.classList.add('visible');
+                statusBar.classList.remove('done', 'error');
+                statusText.textContent = 'Чтение файла...';
+
+                // Read file
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const content = e.target.result;
+                    statusText.textContent = 'Анализ VLESS записей...';
+
+                    // Small delay for visual feedback
+                    setTimeout(() => {
+                        try {
+                            const stats = processContent(content, file.name);
+                            updateUI(stats);
+                        } catch (err) {
+                            statusBar.classList.add('error');
+                            statusText.textContent = '❌ Ошибка обработки: ' + err.message;
+                            console.error('Processing error:', err);
+                        }
+                    }, 150);
+                };
+                reader.onerror = function() {
+                    statusBar.classList.add('error');
+                    statusText.textContent = '❌ Не удалось прочитать файл. Попробуйте другой файл.';
+                };
+                reader.readAsText(file, 'UTF-8');
+            }
+
+            /**
+             * Reset UI state
+             */
+            function resetUI(keepFileName) {
+                if (!keepFileName) {
+                    fileNameEl.textContent = '';
+                    fileNameEl.classList.remove('visible');
+                    originalFileName = '';
+                }
+                results.classList.remove('visible');
+                previewSection.style.display = 'none';
+                statusBar.classList.remove('visible', 'done', 'error');
+                statusText.textContent = 'Обработка файла...';
+                dropZone.classList.remove('processed');
+                btnDownload.disabled = true;
+                processedBlob = null;
+                uniqueVlessUrls = [];
+                hostPortCounts = new Map();
+                totalFound = 0;
+                statTotal.textContent = '0';
+                statUnique.textContent = '0';
+                statDuplicates.textContent = '0';
+                badgeCount.textContent = '0 позиций';
+                tableBody.innerHTML = '<tr><td class="no-data" colspan="3">Нет данных для отображения</td></tr>';
+            }
+
+            /**
+             * Generate output filename based on original
+             */
+            function getOutputFilename() {
+                if (!originalFileName) return 'vless_unique.txt';
+                const dotIndex = originalFileName.lastIndexOf('.');
+                if (dotIndex === -1) return originalFileName + '_unique.txt';
+                const base = originalFileName.substring(0, dotIndex);
+                const ext = originalFileName.substring(dotIndex);
+                return base + '_unique' + ext;
+            }
+
+            /**
+             * Trigger download
+             */
+            function downloadFile() {
+                if (!processedBlob || uniqueVlessUrls.length === 0) return;
+                const url = URL.createObjectURL(processedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = getOutputFilename();
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                // Clean up object URL after a short delay
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+                // Brief visual feedback
+                btnDownload.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    btnDownload.style.transform = '';
+                }, 150);
+            }
+
+            // ============ Event Listeners ============
+
+            // Click on drop zone
+            dropZone.addEventListener('click', (e) => {
+                if (e.target === dropZone || e.target.closest('.drop-icon') || e.target.closest(
+                        '.drop-text') || e.target.closest('.drop-hint') || e.target === dropZone) {
+                    fileInput.click();
+                }
+            });
+
+            // File input change
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) handleFile(file);
+                // Reset input so the same file can be re-selected
+                fileInput.value = '';
+            });
+
+            // Drag events
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add('drag-over');
+            });
+
+            dropZone.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add('drag-over');
+            });
+
+            dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Only remove if we're leaving the drop zone itself
+                if (!dropZone.contains(e.relatedTarget)) {
+                    dropZone.classList.remove('drag-over');
+                }
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('drag-over');
+                const file = e.dataTransfer.files[0];
+                if (file) handleFile(file);
+            });
+
+            // Keyboard accessibility for drop zone
+            dropZone.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInput.click();
+                }
+            });
+
+            // Download button
+            btnDownload.addEventListener('click', downloadFile);
+
+            // Reset button
+            btnReset.addEventListener('click', () => {
+                resetUI(false);
+                dropZone.classList.remove('processed');
+                statusBar.classList.remove('visible', 'done', 'error');
+                results.classList.remove('visible');
+                previewSection.style.display = 'none';
+                fileInput.value = '';
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                dropZone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+
+            // Global: handle files dropped outside the drop zone
+            document.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+            document.addEventListener('drop', (e) => {
+                e.preventDefault();
+                // If dropped outside our drop zone, ignore
+                if (!dropZone.contains(e.target)) {
+                    return;
+                }
+            });
+
+            // Prevent default drag behaviors on the whole page
+            window.addEventListener('dragover', (e) => e.preventDefault());
+            window.addEventListener('drop', (e) => e.preventDefault());
+
+            console.log('🚀 VLESS Log Checker initialized');
+            console.log('   Drop a file with VLESS:// URLs to check uniqueness by IP:Port / Domain:Port');
+            console.log('   All processing is done locally in the browser.');
+        })();
+    </script>
+</body>
+</html>
